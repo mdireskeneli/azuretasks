@@ -1,0 +1,80 @@
+name: Build and Deploy Function App
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore src/DatabaseCloner.FunctionApp/DatabaseCloner.FunctionApp.csproj
+
+      - name: Build
+        run: dotnet build src/DatabaseCloner.FunctionApp/DatabaseCloner.FunctionApp.csproj --configuration Release --no-restore
+
+      - name: Publish
+        run: dotnet publish src/DatabaseCloner.FunctionApp/DatabaseCloner.FunctionApp.csproj --configuration Release --output ./publish
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: functionapp
+          path: publish
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: functionapp
+          path: publish
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy infrastructure
+        uses: azure/arm-deploy@v1
+        with:
+          scope: resourcegroup
+          subscriptionId: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          resourceGroupName: ${{ secrets.AZURE_RESOURCE_GROUP }}
+          template: infra/main.bicep
+          parameters: |
+            appServicePlanName=${{ secrets.APP_SERVICE_PLAN_NAME }}
+            functionAppName=${{ secrets.FUNCTION_APP_NAME }}
+            storageAccountName=${{ secrets.STORAGE_ACCOUNT_NAME }}
+            appInsightsName=${{ secrets.APP_INSIGHTS_NAME }}
+            keyVaultName=${{ secrets.KEY_VAULT_NAME }}
+            sqlServerName=${{ secrets.SQL_SERVER_NAME }}
+            sqlDatabaseName=${{ secrets.SQL_DATABASE_NAME }}
+            sqlAdminLogin=${{ secrets.SQL_ADMIN_LOGIN }}
+            sqlAdminPassword=${{ secrets.SQL_ADMIN_PASSWORD }}
+
+      - name: Deploy Function App
+        uses: azure/functions-action@v1
+        with:
+          app-name: ${{ secrets.FUNCTION_APP_NAME }}
+          package: publish
