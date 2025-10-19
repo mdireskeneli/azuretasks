@@ -1,0 +1,12 @@
+bin/
+obj/
+**/local.settings.json
+.vscode/
+.env
+.tmp/
+*.user
+*.swp
+*.suo
+*.userprefs
+coverage/
+.publish/
